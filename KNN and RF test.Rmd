@@ -1,0 +1,287 @@
+---
+title: "KNN + RF"
+author: "Shahaf Kozokaro"
+date: "6/5/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) #no error massages in final HTML
+```
+These test will deal with analyzing dataset about penguins using two classifier models.
+
+We will compare the performance of the two algorithms, and And draw conclusions
+
+Following is a list of the libraries used in this work.
+```{r}
+# Loading the libraries
+data(penguins, package = "modeldata")
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(randomForest)
+library(tidymodels)
+library(rsample)
+library(modeldata)
+library(vip)  
+library(ranger)
+library(yardstick)
+library(caret)
+library(class)
+library(partykit)
+library(gmodels)
+library(kableExtra)
+library(rlang)
+library(rfviz)
+library(markdown)
+library(knitr)
+```
+```{r}
+#We will remove from the database all NA lines
+penguins<- na.omit(penguins)
+```
+
+
+
+```{r}
+print(penguins %>% 
+  count(sex) %>% 
+  mutate(prop = n/sum(n)))
+
+```
+It can be seen from the above table that there is a ratio between male and female penguins which is about 1: 1.
+we will use this fact when will divide the arrays into a test and study (165F to 168M).
+
+We can now use the database to examine the differences between males and females.
+```{r}
+penguins %>%
+    ggplot(aes(flipper_length_mm, bill_length_mm, color = sex, size = body_mass_g)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~species)
+
+penguins %>%
+    ggplot(aes(body_mass_g, bill_depth_mm, color = sex, size = body_mass_g)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~species)
+
+```
+From the above graph, it can be concluded that there is a difference between males and females penguins which is expressed in measurable characteristics.
+Such characteristics for example are the length of the flippers and the length of the bill.
+These differences exist in all species of penguins when they are more dominant in certain species. For example, Chinstrap seems to have clear differences between males and females (there is almost no overlap between the blue and red dots) while this is less clear in the other species.
+If we will look at body mass VS bill depth we will see that the data is very specific when it came to differentiating males from females in the Gentoo species.
+
+We will now create an array of graphs that will help us see the relationships of different variables between the different penguin species.
+```{r}
+caret::featurePlot(x = penguins %>% select_if(is.numeric),
+        y = penguins$species,
+        plot = "pairs",
+        auto.key = list(columns = 3))
+```
+
+
+The Gentoo are more easily separable from the other two species. their features are more unique. 
+
+```{r}
+caret::featurePlot(x = penguins %>% select_if(is.numeric),
+        y = penguins$sex,
+        plot = "pairs",
+        auto.key = list(columns = 3))
+```
+When building the graph array again if looking at the sex of the penguin the picture is less clear. that is due to the valves between the species mix within each other.
+
+This analysis shows that if we separate the data bass by species and run the machine learning on each one separately we will in theory get better results.
+Despite this, in this work, we will only do one on one Iteration for each ML due to convenience.
+```{r}
+#So that we can repeat results in the future
+set.seed(42)
+#Similar to what is taught in class, we divide the array by a ratio of 30:60
+cell_split <- initial_split(penguins, 
+                            strata = sex)
+
+cell_train <- training(cell_split)
+cell_test  <- testing(cell_split)
+
+nrow(cell_train)
+nrow (cell_train)/nrow(penguins) 
+```
+We will now test that each of the parts we have produced contains the same ratio of males to females.
+Cell Train:
+```{r}
+print(cell_train %>% 
+  count(sex) %>% 
+  mutate(prop = n/sum(n)))
+```
+
+Cell Test:
+```{r}
+print(cell_test %>% 
+  count(sex) %>% 
+  mutate(prop = n/sum(n)))
+```
+
+
+It can be seen that in both the test cells and the training cells the ratio between males and females is maintained
+
+We will start running the random forest algorithm. First, we will perform it on the training set.
+
+```{r}
+# run random forests
+# Random forests
+set.seed(42)
+rf_mod <- 
+  rand_forest(trees = 1000) %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+```
+```{r}
+#RF Performence
+
+rf_fit <- 
+  rf_mod %>% 
+  fit(sex ~ ., data = cell_train)
+print(rf_fit)
+```
+Above are the results for the random forest.
+RF gives 91.9% success according to the model evaluation (0.0801818X100)-100=~91.9%
+
+Now it's time to run the RF on the test data:
+```{r}
+set.seed(42)
+rf_testing_pred <- 
+  predict(rf_fit, cell_test) %>% 
+  bind_cols(predict(rf_fit, cell_test, type = "prob")) %>% 
+  bind_cols(cell_test %>% select(sex))
+# predictions RF
+print(rf_testing_pred %>%                   
+  roc_auc(truth = sex, .pred_female))
+
+print(rf_testing_pred %>%                
+  accuracy(truth = sex, .pred_class))
+```
+From the above data, it can be seen that the values of [98%] ROC and [94%] Accuracy are as expected with respect to the estimated accuracy given by the model [91.9%].
+
+Below is a graph that visually the RF decision trees between males and females.
+
+```The code runs in R but not in HTML.
+RFplot <-rf_prep(x=penguins [,3:6], y=penguins$sex, seed=42) #Take the source data of the penguins and ask for correlations (by RF) to predict sex without physical data only.
+
+rf_viz(RFplot)
+ #This command opens external windows
+  
+``The code runs in R but not in HTML.
+```{r}
+#![RFplot.](https://i.ibb.co/F3g0tXn/RFplot.png)#I uploaded the image to the web and I'm trying to add it
+```
+
+The above command produces two graphs that open in an external window where you can see the different connections that RF makes between all the physical data of the penguins in order to evaluate their sex (without taking into account there species).
+
+We will now make 12 folds to improve the RF model:
+
+```{r}
+set.seed(42)
+folds <- vfold_cv(cell_train, v = 12) # 249 is fully divisible by 12
+folds
+```
+
+```{r}
+set.seed(42)
+rf_wf <- # workflow will bundles together the model.
+  workflow() %>%
+  add_model(rf_mod) %>%
+  add_formula(sex ~ .)
+
+set.seed(42)
+rf_fit_rs <- 
+  rf_wf %>% 
+  fit_resamples(folds)
+```
+
+
+
+
+```{r}
+rf_fit_rs
+```
+The RF model has now been evaluated:
+88% accuracy and 95% ROC as seen below (test data):
+```{r}
+collect_metrics(rf_fit_rs)
+```
+We can see that the accuracy percentage decreased although it remained in the range of 91.9% (predicted accuracy) which shows that the reliability of the model apparently increased.
+
+We will now use the test data:
+```{r}
+rf_testing_pred %>%                  
+  roc_auc(truth = sex, .pred_female)
+
+rf_testing_pred %>%                   
+  accuracy(truth = sex, .pred_class)
+```
+It can be seen that the accuracy is 94% and the ROC is 98% for the train data.  
+
+It seems that in the end, the folds did not really improve the accuracy of the RF model in this case.
+
+Due to the identity in the values between the above parts I have not tried to improve the model beyond what has already been done with resampling.
+
+now we will use the KNN method on the dataset:
+
+The same division that was used for study and test data is 75:25 under the names cell_test and cell_train.
+
+*Prior to that, a data normalization was performed as was explained in the practice.
+
+```{r}
+# All vectors were normalized by using a scale
+penguins_norm <- penguins %>%  
+  mutate_at(c("bill_length_mm", "bill_depth_mm", "flipper_length_mm", "body_mass_g"), ~(scale(.) %>% as.vector))
+```
+
+```{r}
+# Splitting data into train and test data 
+set.seed(42) 
+knn_split <- penguins_norm$sex %>%
+    createDataPartition(p = 0.75, list = FALSE) 
+
+knn_train_cl <- penguins_norm[knn_split , ] 
+knn_test_cl <- penguins_norm[-knn_split , ] 
+
+# Feature Scaling 
+knn_train_scale <- scale(knn_train_cl[ , 3:6]) 
+knn_test_scale <- scale(knn_test_cl[ , 3:6]) 
+
+# Fitting KNN Model to training dataset 
+knn_classifier <- knn(train = knn_train_scale, 
+                    test = knn_test_scale, 
+                    cl = knn_train_cl$sex, 
+                    k = 11) #sqer 81=9.1 so 11 Odd
+```
+ assess KNN accuracy via "confusion matrix":
+
+```{r}
+confusion_matrix <- table(knn_test_cl$sex, knn_classifier) #Build the confusion matrix
+print(confusion_matrix)
+```
+
+```{r}
+# Model Evaluation 
+knn_model_evaluation <- mean(knn_classifier != knn_test_cl$sex) 
+print(paste('Accuracy =', 1-knn_model_evaluation)) 
+```
+ I did a number of runs in K = 11[accuracy: 95.1%] and in K = 3 [accuracy: 92.7%]
+These results of KNN look good and meet the limits of logic from the capabilities of the method.
+
+
+Comparison between all models
+
+```{r}
+
+all_ml = data.frame(Technique = c("kNN test","Random Forest test"),"Accuracy" = c(95.1,94))
+print(all_ml)
+
+```
+By comparing the accuracy of the methods it can be seen that KNN performed slightly better than RF.
+The reason may be due to the type of data (biological).
+It should be noted that the difference is not particularly large and improvement in other ways of the RF model could have compared or even reversed the trend (same also with respect to KNN).
