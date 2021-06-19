@@ -1,5 +1,5 @@
 ---
-title: "KNN + RF"
+title: "KNN and RF"
 author: "Shahaf Kozokaro"
 date: "6/5/2021"
 output:
